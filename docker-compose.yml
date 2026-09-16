@@ -82,6 +82,7 @@ services:
       # --- auth (open by default for local use; set tokens for prod) ---
       SANDBOXD_API_AUTH_DISABLED: ${SANDBOXD_API_AUTH_DISABLED:-true}
       SANDBOXD_API_TOKENS: ${SANDBOXD_API_TOKENS:-}
+      SANDBOXD_PREVIEW_TOKEN_SECRETS: ${SANDBOXD_PREVIEW_TOKEN_SECRETS:-}
       # --- idle lifecycle (override if you like) ---
       SANDBOXD_IDLE_THRESHOLD_SECONDS: ${SANDBOXD_IDLE_THRESHOLD_SECONDS:-2100}
     networks:

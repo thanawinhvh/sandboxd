@@ -7,14 +7,15 @@ import (
 	"net/http"
 	"strings"
 	"sync/atomic"
+	"time"
 )
 
 // Actor identifies the authenticated caller of a request. The auth
 // middleware attaches it to the request context; handlers read it via
 // ActorFrom to populate the audit log.
 type Actor struct {
-	Kind string // service | operator | system | unknown
-	Name string // token name, or "loopback" for the operator path
+	Kind string // service | operator | system | terminal | unknown
+	Name string // token name, "loopback" for the operator path, JWT sub for terminal
 	IP   string
 }
 
@@ -95,6 +96,29 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		// Terminal-over-WebSocket: browsers can't set an
+		// Authorization header on new WebSocket(), so the terminal
+		// endpoint also accepts ?token=. Two credentials fit that
+		// slot, tried in order — a service token (local dev, same
+		// as the Bearer path), then a short-lived upstream-signed
+		// terminal JWT (production: the upstream mints one per
+		// session, so a leaked URL expires in minutes instead of
+		// exposing a long-lived secret). Scoped to that path only;
+		// a missing/wrong token falls through to the normal Bearer
+		// check below (which 401s).
+		if !cfg.Disabled && isTerminalPath(r.URL.Path) {
+			q := r.URL.Query().Get("token")
+			if name, ok := MatchToken(q, cfg.APITokens); ok {
+				next.ServeHTTP(w, r.WithContext(WithActor(r.Context(),
+					Actor{Kind: "service", Name: name, IP: ip})))
+				return
+			}
+			if claims, ok := TerminalAccess(q, r.URL.Path, cfg.PreviewSecrets, time.Now()); ok {
+				next.ServeHTTP(w, r.WithContext(WithActor(r.Context(),
+					Actor{Kind: "terminal", Name: claims.Sub, IP: ip})))
+				return
+			}
+		}
 		if exemptPaths[r.URL.Path] {
 			next.ServeHTTP(w, r.WithContext(WithActor(r.Context(),
 				Actor{Kind: "system", IP: ip})))
@@ -120,6 +144,15 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithContext(WithActor(r.Context(),
 			Actor{Kind: "service", Name: name, IP: ip})))
 	})
+}
+
+// isTerminalPath reports whether p is a per-sandbox terminal
+// endpoint: /v1/sandboxes/<id>/terminal.
+func isTerminalPath(p string) bool {
+	if !strings.HasPrefix(p, "/v1/sandboxes/") {
+		return false
+	}
+	return strings.HasSuffix(p, "/terminal")
 }
 
 // bearerToken extracts the token from an `Authorization: Bearer <t>`

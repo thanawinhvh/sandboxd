@@ -228,7 +228,9 @@ by default** for local use; with `SANDBOXD_API_AUTH_DISABLED=false` +
 | `POST /v1/sandboxes/{id}/tasks` | `{"prompt":"…","agent":"opencode"}` | run a coding agent headlessly |
 | `GET /v1/sandboxes/{id}/tasks/{taskId}` | — | task result |
 | `GET /v1/sandboxes/{id}/tasks/{taskId}/events` | — | live task event stream (SSE) |
-| `GET/PUT /v1/sandboxes/{id}/files` | `{"path","content","append"}` | list / read / write workspace files |
+| `GET /v1/sandboxes/{id}/files` (+ `/files/content`) | `?path=` (`&recursive=true` to list) | list / read workspace files |
+| `PUT /v1/sandboxes/{id}/files` | `?path=<rel>`, raw body (≤25 MiB) | write a workspace file (atomic) |
+| `GET /v1/sandboxes/{id}/terminal` | WebSocket (`?cols=&rows=&token=`) | interactive bash in the sandbox (xterm-ready; short-lived JWT for prod — see `control-plane/README.md`) |
 | `GET /healthz`, `GET /readyz` | — | liveness / readiness |
 
 A complete, copy-pasteable runbook (including driving it from your own agent) is
@@ -272,7 +274,7 @@ For a public deployment on a real wildcard domain:
    every preview host, so you never hit per-host ACME limits).
 3. In `.env`: `PREVIEW_DOMAIN=yourdomain.com`, `PREVIEW_ENTRYPOINT=websecure`,
    `PREVIEW_TLS=true`, and **enable auth** — `SANDBOXD_API_AUTH_DISABLED=false`
-   with `SANDBOXD_API_TOKENS=name:secret`.
+   with `SANDBOXD_API_TOKENS=name=secret`.
 4. `docker compose up -d`.
 
 ## Uninstall

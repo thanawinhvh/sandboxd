@@ -45,7 +45,7 @@ curl -s http://127.0.0.1:9090/readyz    # -> ready
 ## Core API
 Base URL = `http://${SANDBOXD_API_BIND}` (default `http://127.0.0.1:9090`).
 Auth is **off by default** (local). If you set `SANDBOXD_API_AUTH_DISABLED=false`
-+ `SANDBOXD_API_TOKENS=name:secret`, add `-H "Authorization: Bearer secret"`.
++ `SANDBOXD_API_TOKENS=name=secret`, add `-H "Authorization: Bearer <secret>"`.
 
 | Method & path | Body | Purpose |
 |---|---|---|
@@ -57,7 +57,7 @@ Auth is **off by default** (local). If you set `SANDBOXD_API_AUTH_DISABLED=false
 | `POST /v1/sandboxes/{id}/stop` | — | stop now (frees RAM); wakes on next preview hit |
 | `DELETE /sandbox/{id}` | — | destroy the container, KEEP the workspace |
 | `POST /sandbox/{id}/purge` | — | destroy + DELETE the workspace |
-| `PUT /v1/sandboxes/{id}/files` | `{"path":"...","content":"...","append":false}` | write a file into the workspace |
+| `PUT /v1/sandboxes/{id}/files?path=<rel>` | raw file bytes (≤25 MiB) | write a file into the workspace (atomic) |
 | `GET /v1/sandboxes/{id}/files` / `.../files/content?path=` | — | list / read workspace files |
 | `POST /v1/sandboxes/{id}/tasks` | (agent task) | run a coding agent headlessly via `runtimed` |
 | `GET /healthz`, `GET /readyz` | — | liveness / readiness |

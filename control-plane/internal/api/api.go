@@ -4,7 +4,10 @@
 package api
 
 import (
+	"bufio"
+	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
@@ -145,6 +148,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/sandboxes/{id}/files/content", s.observe("GET /v1/sandboxes/{id}/files/content", s.v1FileContent))
 	mux.HandleFunc("PUT /v1/sandboxes/{id}/files", s.observe("PUT /v1/sandboxes/{id}/files", s.v1PutFile))
 	mux.HandleFunc("GET /v1/sandboxes/{id}/export", s.observe("GET /v1/sandboxes/{id}/export", s.v1Export))
+	mux.HandleFunc("GET /v1/sandboxes/{id}/terminal", s.observe("GET /v1/sandboxes/{id}/terminal", s.v1Terminal))
 
 	// Snapshots-as-templates (ops/design/snapshots-as-templates.md).
 	mux.HandleFunc("POST /v1/snapshots", s.observe("POST /v1/snapshots", s.v1CreateSnapshot))
@@ -185,6 +189,16 @@ func (w *statusWriter) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// Hijack forwards to the wrapped writer's hijacker, so this metrics
+// wrapper does not hide http.Hijacker from the WebSocket terminal
+// handler (which needs the raw conn after the 101 handshake).
+func (w *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if h, ok := w.ResponseWriter.(http.Hijacker); ok {
+		return h.Hijack()
+	}
+	return nil, nil, errors.New("api: underlying writer does not support hijack")
 }
 
 func statusBucket(code int) string {

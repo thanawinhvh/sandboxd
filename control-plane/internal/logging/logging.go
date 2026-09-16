@@ -7,9 +7,12 @@
 package logging
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
+	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"time"
@@ -93,4 +96,14 @@ func (w *statusWriter) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// Hijack forwards to the wrapped writer's hijacker, so this logging
+// wrapper does not hide http.Hijacker from the WebSocket terminal
+// handler (which needs the raw conn after the 101 handshake).
+func (w *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if h, ok := w.ResponseWriter.(http.Hijacker); ok {
+		return h.Hijack()
+	}
+	return nil, nil, errors.New("logging: underlying writer does not support hijack")
 }

@@ -14,15 +14,23 @@ import (
 // PreviewAudience is the required `aud` claim on a preview token.
 const PreviewAudience = "sandbox-preview"
 
+// TerminalAudience is the required `aud` claim on a terminal token —
+// the short-lived upstream-signed JWT a browser presents as
+// `?token=` on GET /v1/sandboxes/{id}/terminal. Same kid/secret
+// registry as preview tokens (SANDBOXD_PREVIEW_TOKEN_SECRETS); the
+// `aud` separates the two capabilities, so a preview token can never
+// open a terminal and vice versa.
+const TerminalAudience = "sandbox-terminal"
+
 // Verification errors. CheckPreviewAccess buckets these into the
 // machine-readable forward-auth denial reasons.
 var (
-	ErrTokenMalformed  = errors.New("preview token malformed")
-	ErrTokenBadAlg     = errors.New("preview token alg is not HS256")
-	ErrTokenUnknownKid = errors.New("preview token kid not configured")
-	ErrTokenBadSig     = errors.New("preview token signature invalid")
-	ErrTokenExpired    = errors.New("preview token expired")
-	ErrTokenBadAud     = errors.New("preview token aud mismatch")
+	ErrTokenMalformed  = errors.New("token malformed")
+	ErrTokenBadAlg     = errors.New("token alg is not HS256")
+	ErrTokenUnknownKid = errors.New("token kid not configured")
+	ErrTokenBadSig     = errors.New("token signature invalid")
+	ErrTokenExpired    = errors.New("token expired")
+	ErrTokenBadAud     = errors.New("token aud mismatch")
 )
 
 type jwtHeader struct {
@@ -45,11 +53,30 @@ type PreviewClaims struct {
 	Kid       string `json:"-"` // copied from the JWS header
 }
 
+// TerminalClaims is the validated payload of an upstream-signed
+// terminal token. Same wire shape as PreviewClaims; only the `aud`
+// differs (TerminalAudience), enforced by VerifyTerminalToken.
+type TerminalClaims = PreviewClaims
+
 // VerifyPreviewToken parses and verifies an HS256 JWS. `secrets` maps
 // the `kid` header to the shared HMAC secret; `now` is the reference
 // time for the `exp` check. The token format is the standard compact
 // JWS (`header.payload.signature`, each base64url, no padding).
 func VerifyPreviewToken(token string, secrets map[string]string, now time.Time) (*PreviewClaims, error) {
+	return verifyToken(token, secrets, now, PreviewAudience)
+}
+
+// VerifyTerminalToken parses and verifies an upstream-signed terminal
+// token: same compact JWS and kid/secret registry as preview tokens,
+// but requiring TerminalAudience. It does NOT check that the token's
+// sandbox_id matches the request path — the caller (TerminalAccess)
+// does that, since only it knows the path.
+func VerifyTerminalToken(token string, secrets map[string]string, now time.Time) (*TerminalClaims, error) {
+	return verifyToken(token, secrets, now, TerminalAudience)
+}
+
+// verifyToken is the shared HS256 JWS core behind both audiences.
+func verifyToken(token string, secrets map[string]string, now time.Time, audience string) (*PreviewClaims, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
 		return nil, ErrTokenMalformed
@@ -92,7 +119,7 @@ func VerifyPreviewToken(token string, secrets map[string]string, now time.Time) 
 		return nil, ErrTokenMalformed
 	}
 	c.Kid = hdr.Kid
-	if c.Aud != PreviewAudience {
+	if c.Aud != audience {
 		return nil, ErrTokenBadAud
 	}
 	if c.Exp <= now.Unix() {
@@ -131,4 +158,39 @@ func CheckPreviewAccess(cookieVal, sandboxID, ownerExternalUserID string, secret
 		return nil, "wrong_user"
 	}
 	return claims, ""
+}
+
+// TerminalAccess verifies a `?token=` JWT presented on the terminal
+// path: signature + expiry + TerminalAudience, and the token's
+// sandbox_id must equal the id in the path — a token minted for one
+// sandbox never opens another's shell. Returns the validated claims
+// and true, or nil and false on any failure (callers map every
+// failure to the same 401; the reason never leaves the process).
+func TerminalAccess(token, path string, secrets map[string]string, now time.Time) (*TerminalClaims, bool) {
+	id := terminalSandboxID(path)
+	if id == "" || token == "" {
+		return nil, false
+	}
+	claims, err := VerifyTerminalToken(token, secrets, now)
+	if err != nil || claims.SandboxID != id {
+		return nil, false
+	}
+	return claims, true
+}
+
+// terminalSandboxID extracts the sandbox id from a terminal path
+// `/v1/sandboxes/<id>/terminal`, or "" when the path does not have
+// exactly that shape. Stricter than a prefix/suffix match: any extra
+// segment (or an empty id) is rejected.
+func terminalSandboxID(p string) string {
+	const prefix = "/v1/sandboxes/"
+	const suffix = "/terminal"
+	if !strings.HasPrefix(p, prefix) || !strings.HasSuffix(p, suffix) {
+		return ""
+	}
+	id := p[len(prefix) : len(p)-len(suffix)]
+	if id == "" || strings.Contains(id, "/") {
+		return ""
+	}
+	return id
 }
