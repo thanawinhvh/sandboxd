@@ -545,8 +545,10 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		CapDrop:     []string{"ALL"},
 		SecurityOpt: []string{"no-new-privileges"},
 		CPUShares:   100,
-		Memory:      "10g",
-		MemorySwap:  "10g",
+		// was 10g on a 12GB VM — one user could starve everyone (29 Sep 2026).
+		// ponytail: fixed cap; make it an env knob if plans ever get sized tiers.
+		Memory:      "1536m",
+		MemorySwap:  "1536m",
 		PidsLimit:   1024,
 		Ulimits:     []string{"nofile=65536:65536"},
 		Tmpfs:       []string{"/tmp:size=512m", "/var/tmp:size=128m"},

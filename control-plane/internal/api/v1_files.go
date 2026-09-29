@@ -136,6 +136,17 @@ func (s *Server) v1FileContent(w http.ResponseWriter, r *http.Request) {
 func (s *Server) v1Export(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	root := s.appDirFor(id)
+	// ?dir=<path under the sandbox home> exports that folder instead of
+	// workspace/app — appgu's terminal works in ~/workspace (29 Sep 2026).
+	if d := r.URL.Query().Get("dir"); d != "" {
+		_, mnt := s.Loopback.Paths(id)
+		full, ok := safeJoin(mnt, d)
+		if !ok {
+			writeV1Err(w, http.StatusBadRequest, "invalid_request", "invalid dir")
+			return
+		}
+		root = full
+	}
 	if info, err := os.Stat(root); err != nil || !info.IsDir() {
 		writeV1Err(w, http.StatusNotFound, "not_found", "no workspace for that sandbox")
 		return
